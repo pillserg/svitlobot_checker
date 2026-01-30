@@ -2,17 +2,18 @@
 """Simple HTTP server that starts/stops based on ping connectivity."""
 
 import asyncio
+import logging
 
 from aiohttp import web
 
 PING_TARGET = "192.168.0.162"
-PING_INTERVAL = 5  # seconds
+PING_INTERVAL = 10  # seconds
 
 
 routes = web.RouteTableDef()
 @routes.get('/')
 async def hello(request):
-    print(f"got incoming request: {request}")
+    logging.info(f"got incoming request: {request}")
     return web.Response(text="OK")
 
 
@@ -25,11 +26,11 @@ async def run_cmd(cmd):
 
     stdout, stderr = await proc.communicate()
 
-    print(f'[{cmd!r} exited with {proc.returncode}]')
+    logging.info(f'[{cmd!r} exited with {proc.returncode}]')
     if stdout:
-        print(f'[stdout]\n{stdout.decode()}')
+        logging.info(f'[stdout]\n{stdout.decode()}')
     if stderr:
-        print(f'[stderr]\n{stderr.decode()}')
+        logging.info(f'[stderr]\n{stderr.decode()}')
 
     return proc.returncode
 
@@ -47,24 +48,26 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, host, port)
     await site.start()
-    print(f"server up on {host}:{port}")
+    logging.info(f"server up on {host}:{port}")
 
-    print(f"Starting ping monitor (target: {PING_TARGET}, interval: {PING_INTERVAL}s)")
-    
+    logging.info(f"Starting ping monitor (target: {PING_TARGET}, interval: {PING_INTERVAL}s)")
+
     while True:
-        await asyncio.sleep(PING_INTERVAL)  # sleep forever
         reachable = await ping(PING_TARGET)
         is_server_running = site in runner._sites
         if not reachable and is_server_running:
-            print(f"target unreacheble and server running - stop server")
+            logging.info(f"target unreacheble and server running - stop server")
             await site.stop() 
+            await runner.cleanup()
         elif reachable and not is_server_running:
-            print(f"target reachable and server not running - start server")
+            logging.info(f"target reachable and server not running - start server")
+            await runner.setup()
             await site.start()
+        
+        await asyncio.sleep(PING_INTERVAL)
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
-    loop.close()
-
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    asyncio.run(main())
